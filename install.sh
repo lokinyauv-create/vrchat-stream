@@ -45,10 +45,9 @@ fi
 missing=()
 for c in ffmpeg cloudflared pactl curl Xwayland; do command -v $c >/dev/null || missing+=("$c"); done
 browser=no
-for b in brave-browser brave chromium-browser chromium google-chrome-stable google-chrome; do
-  command -v $b >/dev/null && browser=yes
-done
-[ $browser = yes ] || missing+=("chromium (or Brave / Chrome)")
+DISP=:77; SINK=x; . "$SRC/server/browsers.sh"
+[ -n "$(installed_browsers)" ] && browser=yes
+[ $browser = yes ] || missing+=("a browser: Chromium, Brave, Chrome, Firefox… / браузер")
 python3 -c 'import dbus, gi; gi.require_version("Gst", "1.0"); from gi.repository import Gst' 2>/dev/null \
   || missing+=("python3-dbus + python3-gobject + gstreamer")
 command -v wl-copy >/dev/null || missing+=("wl-clipboard (optional)")

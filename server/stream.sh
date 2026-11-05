@@ -15,16 +15,28 @@
 # Settings come as env vars from the window (screen_capture.py reads the same)
 export W=${W:-1920} H=${H:-1080} FPS=${FPS:-30} KBPS=${KBPS:-4500} \
     AKBPS=${AKBPS:-160} SEG=${SEG:-1} LIST=${LIST:-4} CURSOR=${CURSOR:-0} \
-    ENCODER=${ENCODER:-auto}
+    ENCODER=${ENCODER:-auto} BROWSER=${BROWSER:-auto}
 DISP=:77
 PORT=8790
 SINK=vrchat_stream
 DIR="$(dirname "$(readlink -f "$0")")"
 RUN=/run/user/$(id -u)/vrchat-stream
-PROFILE=~/.local/share/vrchat-stream/browser-profile
 
 MODE=${1:-browser}
 START_URL=$2
+
+# shellcheck source=browsers.sh
+. "$DIR/browsers.sh"
+# Profile of version 1.0.0 (Brave only) — keep its logins
+OLD_PROFILE=~/.local/share/vrchat-stream/browser-profile
+[ -d "$OLD_PROFILE" ] && [ ! -e "$PROFILES/brave" ] && mkdir -p "$PROFILES" && mv "$OLD_PROFILE" "$PROFILES/brave"
+
+# "stream.sh browsers": what the window's browser list should offer
+if [ "$MODE" = browsers ]; then
+    echo "BROWSERS: $(installed_browsers | tr '\n' ' ')"
+    echo "DEFAULT: $(default_browser)"
+    exit 0
+fi
 
 # Over SSH there is no desktop environment: find the user's session
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -37,10 +49,6 @@ export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTI
 say() { echo "$@"; }
 
 # Dependencies
-BROWSER=
-for b in brave-browser brave chromium-browser chromium google-chrome-stable google-chrome; do
-    command -v $b >/dev/null && { BROWSER=$b; break; }
-done
 MISSING=
 need() { command -v "$1" >/dev/null || MISSING="$MISSING $1"; }
 need ffmpeg; need cloudflared; need pactl; need python3; need curl
@@ -49,7 +57,9 @@ if [ "$MODE" = screen ]; then
         2>/dev/null || MISSING="$MISSING python3-dbus/gstreamer-python"
 else
     need Xwayland
-    [ -n "$BROWSER" ] || MISSING="$MISSING chromium/brave"
+    if ! pick_browser "$BROWSER"; then
+        [ "$BROWSER" = auto ] && MISSING="$MISSING browser" || MISSING="$MISSING $BROWSER"
+    fi
 fi
 if [ -n "$MISSING" ]; then
     say "ERROR: missing$MISSING"
@@ -87,7 +97,7 @@ cleanup() {
     trap - EXIT INT TERM HUP
     say "STATUS: stopping"
     kill $FF_PID $CF_PID $HTTP_PID $INHIBIT_PID 2>/dev/null
-    pkill -f -- "--user-data-dir=$PROFILE" 2>/dev/null
+    pkill -f -- "(--user-data-dir=|--profile )$PROFILES/" 2>/dev/null
     kill $XW_PID 2>/dev/null
     [ -n "$MOD" ] && pactl unload-module "$MOD" 2>/dev/null
     rm -rf "$RUN"
@@ -111,12 +121,12 @@ echo $$ >"$PIDFILE"
 pkill -f "cloudflared tunnel --no-autoupdate --url http://127.0.0.1:$PORT" 2>/dev/null
 pkill -f "hls_server.py $RUN" 2>/dev/null
 pkill -f "x11grab.*$DISP" 2>/dev/null
-pkill -f -- "--user-data-dir=$PROFILE" 2>/dev/null
+pkill -f -- "(--user-data-dir=|--profile )$PROFILES/" 2>/dev/null
 pkill -f "Xwayland $DISP" 2>/dev/null
 pkill -f "screen_capture.py $RUN" 2>/dev/null
 for m in $(pactl list short modules | awk -v s="sink_name=$SINK" '$0 ~ s {print $1}'); do pactl unload-module "$m"; done
 sleep 1
-rm -rf "$RUN"; mkdir -p "$RUN/hls" "$PROFILE"
+rm -rf "$RUN"; mkdir -p "$RUN/hls"
 
 # Keep the computer awake while streaming
 if command -v kde-inhibit >/dev/null; then
@@ -141,10 +151,7 @@ else
     Xwayland $DISP -geometry ${W}x${H} -decorate -noreset >"$RUN/xwayland.log" 2>&1 &
     XW_PID=$!
     for _ in $(seq 50); do [ -S /tmp/.X11-unix/X${DISP#:} ] && break; sleep 0.1; done
-    DISPLAY=$DISP PULSE_SINK=$SINK $BROWSER --ozone-platform=x11 \
-        --user-data-dir="$PROFILE" --no-first-run --no-default-browser-check \
-        --window-position=0,0 --window-size=$W,$H \
-        --autoplay-policy=no-user-gesture-required ${START_URL:+"$START_URL"} >"$RUN/browser.log" 2>&1 &
+    launch_browser >"$RUN/browser.log" 2>&1 &
 
     say "STATUS: starting_capture"
     # shellcheck disable=SC2046

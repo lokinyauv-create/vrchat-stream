@@ -39,6 +39,7 @@ To stop the stream, close the window. You get a new link every time you start.
 
 - **Picture and sound:** picture size (720p / 1080p / 1440p), frames per second (24 / 30 / 60), video bitrate, sound quality, the encoder (NVIDIA, AMD/Intel VA-API or the processor), and the mouse cursor.
 - **Delay:** choose between **minimal** (~3 s), **normal** (~4–6 s) or **stable** (~8–12 s, for bad internet). Some world players (e.g. ProTV) also have their own *low latency* switch.
+- **Browser:** which browser opens in 🌐 mode — the computer's default browser, or Brave, Chrome, Chromium, Vivaldi, Edge, Firefox, LibreWolf or Zen (regular or Flatpak). Browsers that aren't installed are greyed out. Each has its own separate profile for the stream, so your logins in it stay between streams.
 - **Computer:** stream from **this computer**, or from **another computer over SSH** (e.g. a second PC or a mini server, so your gaming PC stays free).
   - Optional: a MAC address to wake that computer up (Wake-on-LAN).
   - Optional: a command that opens your remote desktop app for it (e.g. `moonlight`).
@@ -48,7 +49,7 @@ To stop the stream, close the window. You get a new link every time you start.
 ### Requirements
 
 - Linux with a **Wayland** desktop (tested on Fedora KDE Plasma 6).
-- `python3` with PySide6 (the installer tries to get it), `ffmpeg`, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), `Xwayland`, a Chromium-based browser (Brave, Chromium or Chrome), and PipeWire.
+- `python3` with PySide6 (the installer tries to get it), `ffmpeg`, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), `Xwayland`, a browser (Chromium-based or Firefox-based), and PipeWire.
 - For "Screen, window or region": `python3-dbus`, `python3-gobject` and GStreamer with its PipeWire plugin.
 - The installer lists whatever is missing, with commands for Fedora, Ubuntu and Arch.
 - For another computer: install VRChat Stream there too, and set up an SSH key (`ssh-copy-id user@computer`).
@@ -95,6 +96,7 @@ curl -fsSL https://raw.githubusercontent.com/lokinyauv-create/vrchat-stream/main
 
 - **Картинка і звук:** розмір картинки (720p / 1080p / 1440p), кадри на секунду (24 / 30 / 60), бітрейт відео, якість звуку, кодування (NVIDIA, AMD/Intel VA-API або процесор) і курсор миші.
 - **Затримка:** можна вибрати **мінімальну** (~3 с), **звичайну** (~4–6 с) або **стабільну** (~8–12 с, для поганого інтернету). Деякі плеєри у світах (наприклад, ProTV) мають ще й власну кнопку *low latency*.
+- **Браузер:** який браузер відкривається в режимі 🌐: браузер за замовчуванням або Brave, Chrome, Chromium, Vivaldi, Edge, Firefox, LibreWolf чи Zen (звичайний або Flatpak). Невстановлені браузери сірі. Кожен має свій окремий профіль для трансляції, тож входи на сайти в ньому зберігаються.
 - **Комп'ютер:** транслювати з **цього комп'ютера** або з **іншого через SSH** (наприклад, з другого ПК чи міні-сервера, щоб ігровий ПК був вільний).
   - Необов'язково: MAC-адреса, щоб будити той комп'ютер (Wake-on-LAN).
   - Необов'язково: команда, яка відкриває віддалений стіл (наприклад, `moonlight`).
@@ -105,7 +107,7 @@ curl -fsSL https://raw.githubusercontent.com/lokinyauv-create/vrchat-stream/main
 - Linux зі стільницею **Wayland** (перевірено на Fedora KDE Plasma 6).
 - `python3` і PySide6 (встановлювач спробує поставити його сам).
 - `ffmpeg`, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) і `Xwayland`.
-- Браузер на основі Chromium (Brave, Chromium або Chrome) і PipeWire.
+- Браузер (на основі Chromium або Firefox) і PipeWire.
 - Для режиму «Екран, вікно або область»: `python3-dbus`, `python3-gobject` і GStreamer з плагіном PipeWire.
 - Встановлювач покаже, чого бракує, і дасть команди для Fedora, Ubuntu та Arch.
 - Для іншого комп'ютера: встанови Трансляцію у VRChat і там, і налаштуй SSH-ключ (`ssh-copy-id користувач@комп'ютер`).

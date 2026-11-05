@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QLineEdit, QPushButton, QTabWidget, QVBoxLayout,
                                QWidget)
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL_SCRIPT = os.path.join(HERE, "server", "stream.sh")
 REMOTE_SCRIPT = "~/.local/share/vrchat-stream/server/stream.sh"
@@ -52,6 +52,8 @@ TEXT = {
         "lat_stable": "Stable (~8–12 s, for bad internet)",
         "enc_auto": "Automatic (best available)", "enc_nvenc": "NVIDIA graphics card",
         "enc_vaapi": "AMD / Intel graphics (VA-API)", "enc_x264": "Processor (x264)",
+        "browser": "Browser (🌐 mode):", "br_auto": "Default browser",
+        "br_missing": " — not installed",
         "source": "Stream from:", "src_local": "This computer",
         "src_ssh": "Another computer (SSH)",
         "host": "SSH address:", "host_ph": "user@computer.local",
@@ -121,6 +123,8 @@ TEXT = {
         "lat_stable": "Стабільна (~8–12 с, для поганого інтернету)",
         "enc_auto": "Автоматично (найкраще з наявного)", "enc_nvenc": "Відеокарта NVIDIA",
         "enc_vaapi": "Відеокарта AMD / Intel (VA-API)", "enc_x264": "Процесор (x264)",
+        "browser": "Браузер (режим 🌐):", "br_auto": "Браузер за замовчуванням",
+        "br_missing": " — не встановлено",
         "source": "Звідки транслювати:", "src_local": "Цей комп'ютер",
         "src_ssh": "Інший комп'ютер (SSH)",
         "host": "Адреса SSH:", "host_ph": "користувач@комп'ютер.local",
@@ -175,6 +179,10 @@ LATENCY = [("lat_min", "1:3"), ("lat_normal", "1:4"), ("lat_stable", "2:6")]
 ENCODERS = [("enc_auto", "auto"), ("enc_nvenc", "nvenc"), ("enc_vaapi", "vaapi"),
             ("enc_x264", "x264")]
 SOURCES = [("src_local", "local"), ("src_ssh", "ssh")]
+# ids known to server/browsers.sh; "auto" = the streaming computer's default
+BROWSERS = [("auto", None), ("brave", "Brave"), ("chrome", "Google Chrome"),
+            ("chromium", "Chromium"), ("vivaldi", "Vivaldi"), ("edge", "Microsoft Edge"),
+            ("firefox", "Firefox"), ("librewolf", "LibreWolf"), ("zen", "Zen")]
 DEFAULTS = {"size": "1920x1080", "fps": "30", "mbps": 4.5, "audio": "160",
             "latency": "1:4", "encoder": "auto", "cursor": False}
 
@@ -297,8 +305,12 @@ class Window(QWidget):
         self.proc.readyReadStandardOutput.connect(self.read_output)
         self.proc.finished.connect(self.finished)
         self.tester = None
+        self.lister = None
+        self.installed = None      # browsers on the streaming computer, None = unknown
+        self.default_browser = ""
 
         self.retranslate()
+        self.refresh_browsers()
 
     # ------------------------------------------------------------ language
     def t(self, key):
@@ -333,6 +345,7 @@ class Window(QWidget):
         self.mac.setPlaceholderText(self.t("mac_ph"))
         self.remote_cmd.setPlaceholderText(self.t("remote_cmd_ph"))
         self.test_btn.setText(self.t("test"))
+        self.update_browser_items()
         self.show_status()
         self.show_steps()
         self.update_source()
@@ -404,6 +417,13 @@ class Window(QWidget):
         test_row.addWidget(self.test_result, 1)
         form.addRow("", test_row)
         self.pc_hint = hint_label()
+        self.browser = QComboBox()
+        for value, _name in BROWSERS:
+            self.browser.addItem("", value)
+        i = self.browser.findData(self.settings.value("browser", "auto"))
+        self.browser.setCurrentIndex(max(i, 0))
+        self.browser.currentIndexChanged.connect(self.save_options)
+        row(form, "browser", self.browser)
         form.addRow(self.pc_hint)
         self.tabs.addTab(pc, "")
         self.tabs.setCurrentIndex(int(self.settings.value("tab", 0)))
@@ -413,6 +433,8 @@ class Window(QWidget):
         values["source"] = self.settings.value("source", "local")
         self.load_options(values)
         self.combos["source"].currentIndexChanged.connect(self.update_source)
+        self.combos["source"].currentIndexChanged.connect(self.refresh_browsers)
+        self.host.editingFinished.connect(self.refresh_browsers)
         return box
 
     def load_options(self, values):
@@ -434,6 +456,8 @@ class Window(QWidget):
             self.settings.setValue(key, c.currentData())
         self.settings.setValue("mbps", self.mbps.value())
         self.settings.setValue("cursor", self.cursor.isChecked())
+        if hasattr(self, "browser"):
+            self.settings.setValue("browser", self.browser.currentData())
         for key, edit in (("host", self.host), ("mac", self.mac), ("remote_cmd", self.remote_cmd)):
             self.settings.setValue(key, edit.text().strip())
 
@@ -455,7 +479,8 @@ class Window(QWidget):
                 "KBPS": str(int(self.mbps.value() * 1000)),
                 "AKBPS": self.combos["audio"].currentData(), "SEG": seg, "LIST": lst,
                 "CURSOR": str(int(self.cursor.isChecked())),
-                "ENCODER": self.combos["encoder"].currentData()}
+                "ENCODER": self.combos["encoder"].currentData(),
+                "BROWSER": self.browser.currentData()}
 
     def ssh_args(self, command):
         return ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=15",
@@ -475,10 +500,51 @@ class Window(QWidget):
         out = bytes(self.tester.readAll()).decode(errors="replace").strip()
         if code == 0 and out.endswith("OK"):
             self.test_result.setText(self.t("test_ok"))
+            self.refresh_browsers()
         elif code == 0:
             self.test_result.setText(self.t("test_missing"))
         else:
             self.test_result.setText(self.t("test_fail") + out.splitlines()[-1:][0] if out else self.t("test_fail"))
+
+    def refresh_browsers(self):
+        """Ask the streaming computer which browsers it has (marks the rest)."""
+        self.installed = None
+        self.default_browser = ""
+        self.update_browser_items()
+        if self.lister and self.lister.state() != QProcess.NotRunning:
+            self.lister.kill()
+        self.lister = QProcess(self)
+        self.lister.finished.connect(self.browsers_listed)
+        if not self.remote():
+            self.lister.start("bash", [LOCAL_SCRIPT, "browsers"])
+        elif self.host.text().strip():
+            self.lister.start("ssh", self.ssh_args(f"{REMOTE_SCRIPT} browsers"))
+
+    def browsers_listed(self, code, _status):
+        out = bytes(self.lister.readAllStandardOutput()).decode(errors="replace")
+        if code != 0 or "BROWSERS:" not in out:
+            return
+        for line in out.splitlines():
+            if line.startswith("BROWSERS:"):
+                self.installed = set(line[9:].split())
+            elif line.startswith("DEFAULT:"):
+                self.default_browser = line[8:].strip()
+        self.update_browser_items()
+
+    def update_browser_items(self):
+        names = dict(BROWSERS)
+        model = self.browser.model()
+        for i, (value, name) in enumerate(BROWSERS):
+            if value == "auto":
+                text = self.t("br_auto")
+                if self.default_browser in names:
+                    text += f" ({names[self.default_browser]})"
+                available = True
+            else:
+                available = self.installed is None or value in self.installed
+                text = name + ("" if available else self.t("br_missing"))
+            self.browser.setItemText(i, text)
+            model.item(i).setEnabled(available)
 
     # ------------------------------------------------------------ streaming
     def choose(self, mode):
